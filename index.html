@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Action plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F4EF; --card:#FFFFFF; --ink:#20241F; --ink-soft:#5B5F55; --hairline:#DEDBD0;
+    --teal:#0F5C56; --teal-tint:#E3EFEC; --rust:#B34700; --rust-tint:#FBE9DE;
+    --amber:#8A6100; --amber-tint:#FBF0D9; --moss:#3F7D53; --moss-tint:#E7F1E9;
+    --gray:#8A8A82; --gray-tint:#EDECE6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1A1C18; --card:#24261F; --ink:#EDEBE2; --ink-soft:#A9AC9F; --hairline:#3A3D34;
+      --teal:#6FCFC1; --teal-tint:#20302D; --rust:#F2A279; --rust-tint:#3A2517;
+      --amber:#F0C868; --amber-tint:#3A3016; --moss:#9BD1AC; --moss-tint:#233B29;
+      --gray:#9B9B90; --gray-tint:#302F29;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap{max-width:920px; margin:0 auto; padding:2.5rem 1.5rem 4rem;}
+  .eyebrow{ font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:var(--teal); font-weight:600; margin:0 0 6px; }
+  h1{ font-family:'Fraunces', serif; font-weight:500; font-size:34px; line-height:1.15; margin:0 0 4px; border:none; background:transparent; color:var(--ink); width:100%; padding:2px 0; }
+  h1:focus{outline:none; border-bottom:1px solid var(--hairline);}
+  .plan-meta{color:var(--ink-soft); font-size:14px; margin:0 0 2rem;}
+  .toolbar{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:1.25rem; flex-wrap:wrap;}
+  .count{font-size:13px; color:var(--ink-soft);}
+  button.add{ background:var(--teal); color:var(--paper); border:none; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:500; font-family:inherit; cursor:pointer; }
+  button.add:hover{opacity:0.9;}
+  button.ghost{ background:transparent; color:var(--teal); border:1px solid var(--teal); }
+  .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--ink-soft); margin-bottom:1.5rem;}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
+  .rows{display:flex; flex-direction:column; gap:10px;}
+  .row{ display:grid; grid-template-columns: 4px 1.4fr 1fr 150px 1.3fr 34px; gap:0; background:var(--card); border:1px solid var(--hairline); border-radius:10px; overflow:hidden; align-items:stretch; }
+  .row.done{opacity:0.6;}
+  .rail{width:4px;}
+  .cell{padding:12px 14px; border-left:1px solid var(--hairline); display:flex; flex-direction:column; justify-content:center; gap:4px;}
+  .row .cell:first-of-type{border-left:none;}
+  .label{font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em; display:none;}
+  input[type=text], input[type=date], textarea{ border:none; background:transparent; color:var(--ink); font-family:inherit; font-size:14px; width:100%; padding:2px 0; resize:none; }
+  input[type=text]:focus, input[type=date]:focus, textarea:focus{outline:none;}
+  .activity-cell{display:flex; align-items:flex-start; gap:10px;}
+  .activity-cell input[type=text]{font-weight:500;}
+  input[type=checkbox]{ margin-top:3px; width:16px; height:16px; accent-color:var(--teal); flex-shrink:0; cursor:pointer; }
+  .done .activity-cell input[type=text]{text-decoration:line-through; color:var(--ink-soft);}
+  .status-chip{ display:inline-block; font-size:12px; font-weight:500; padding:2px 0; }
+  .actions-cell{padding:0; align-items:center; justify-content:center; border-left:1px solid var(--hairline);}
+  .del{ background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:18px; line-height:1; padding:8px; }
+  .del:hover{color:var(--rust);}
+  .empty{ text-align:center; padding:3rem 1rem; border:1px dashed var(--hairline); border-radius:10px; color:var(--ink-soft); }
+  .empty p{margin:0 0 12px;}
+  .sync{font-size:12px; color:var(--ink-soft);}
+  @media (max-width:720px){
+    .row{grid-template-columns: 4px 1fr; grid-template-rows:auto auto auto auto auto;}
+    .cell{border-left:none !important; border-top:1px solid var(--hairline);}
+    .row .cell:nth-of-type(2){border-top:none;}
+    .actions-cell{border-top:1px solid var(--hairline); flex-direction:row; justify-content:flex-end; padding:8px 14px;}
+    .label{display:block;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Action plan</p>
+  <h1 id="planTitle" contenteditable="true" spellcheck="false">Untitled plan</h1>
+  <p class="plan-meta" id="planMeta">Loading…</p>
+
+  <div class="toolbar">
+    <div style="display:flex; gap:10px;">
+      <button class="add" id="addBtn" type="button">+ Add activity</button>
+      <button class="add ghost" id="refreshBtn" type="button">Refresh</button>
+    </div>
+    <span class="count" id="countLabel"></span>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--rust)"></i>Overdue</span>
+    <span><i class="dot" style="background:var(--amber)"></i>Due soon</span>
+    <span><i class="dot" style="background:var(--moss)"></i>On track</span>
+    <span><i class="dot" style="background:var(--gray)"></i>Done / no date</span>
+  </div>
+
+  <div class="rows" id="rows"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <p>No activities yet.</p>
+    <button class="add" id="addBtnEmpty" type="button">+ Add your first activity</button>
+  </div>
+  <p class="sync" id="syncNote"></p>
+</div>
+
+<script>
+let items = [];
+let saveTimer = null;
+let isTyping = false;
+let lastSnapshot = '[]';
+
+function uid(){ return 'i' + Math.random().toString(36).slice(2, 10); }
+
+function daysBetween(dateStr){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const target = new Date(dateStr + 'T00:00:00');
+  return Math.round((target - today) / 86400000);
+}
+
+function statusFor(item){
+  if(item.done) return { color:'var(--gray)', text:'Done' };
+  if(!item.deadline) return { color:'var(--gray)', text:'No deadline set' };
+  const d = daysBetween(item.deadline);
+  if(d < 0) return { color:'var(--rust)', text: 'Overdue by ' + Math.abs(d) + (Math.abs(d)===1 ? ' day' : ' days') };
+  if(d === 0) return { color:'var(--amber)', text:'Due today' };
+  if(d <= 3) return { color:'var(--amber)', text: d + (d===1?' day left':' days left') };
+  return { color:'var(--moss)', text: d + ' days left' };
+}
+
+function render(){
+  const rowsEl = document.getElementById('rows');
+  const emptyEl = document.getElementById('emptyState');
+  rowsEl.innerHTML = '';
+  if(items.length === 0){
+    emptyEl.style.display = 'block';
+    document.getElementById('countLabel').textContent = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  const openCount = items.filter(i => !i.done).length;
+  document.getElementById('countLabel').textContent = openCount + ' open, ' + (items.length - openCount) + ' done';
+
+  items.forEach(item => {
+    const st = statusFor(item);
+    const row = document.createElement('div');
+    row.className = 'row' + (item.done ? ' done' : '');
+    row.innerHTML = `
+      <div class="rail" style="background:${st.color}"></div>
+      <div class="cell activity-cell">
+        <input type="checkbox" data-id="${item.id}" data-field="done" ${item.done ? 'checked' : ''}>
+        <div style="width:100%;">
+          <span class="label">Activity</span>
+          <input type="text" data-id="${item.id}" data-field="activity" placeholder="What needs to happen" value="${escapeAttr(item.activity)}">
+        </div>
+      </div>
+      <div class="cell">
+        <span class="label">Responsible</span>
+        <input type="text" data-id="${item.id}" data-field="responsible" placeholder="Who owns this" value="${escapeAttr(item.responsible)}">
+      </div>
+      <div class="cell">
+        <span class="label">Deadline</span>
+        <input type="date" data-id="${item.id}" data-field="deadline" value="${item.deadline || ''}">
+        <span class="status-chip" style="color:${st.color}">${st.text}</span>
+      </div>
+      <div class="cell">
+        <span class="label">Notice</span>
+        <textarea rows="1" data-id="${item.id}" data-field="notice" placeholder="Notes, blockers, context">${escapeHtml(item.notice)}</textarea>
+      </div>
+      <div class="cell actions-cell">
+        <button class="del" data-id="${item.id}" title="Delete activity" aria-label="Delete activity">×</button>
+      </div>
+    `;
+    rowsEl.appendChild(row);
+  });
+
+  rowsEl.querySelectorAll('input[type=text], input[type=date], textarea').forEach(el => {
+    el.addEventListener('input', onFieldChange);
+    el.addEventListener('focus', () => { isTyping = true; });
+    el.addEventListener('blur', () => { isTyping = false; });
+  });
+  rowsEl.querySelectorAll('input[type=checkbox]').forEach(el => {
+    el.addEventListener('change', onFieldChange);
+  });
+  rowsEl.querySelectorAll('.del').forEach(el => {
+    el.addEventListener('click', onDelete);
+  });
+}
+
+function escapeHtml(str){ return (str || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escapeAttr(str){ return (str || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function onFieldChange(e){
+  const id = e.target.dataset.id;
+  const field = e.target.dataset.field;
+  const item = items.find(i => i.id === id);
+  if(!item) return;
+  if(field === 'done'){
+    item.done = e.target.checked;
+    render();
+  } else {
+    item[field] = e.target.value;
+    if(field === 'deadline') render();
+  }
+  scheduleSave();
+}
+
+function onDelete(e){
+  const id = e.target.dataset.id;
+  items = items.filter(i => i.id !== id);
+  render();
+  scheduleSave();
+}
+
+function addItem(){
+  items.push({ id: uid(), activity:'', responsible:'', deadline:'', notice:'', done:false });
+  render();
+  scheduleSave();
+  const inputs = document.querySelectorAll('.activity-cell input[type=text]');
+  if(inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveItems, 400);
+}
+
+async function saveItems(){
+  try{
+    await fetch('/api/plan/items', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ items })
+    });
+    lastSnapshot = JSON.stringify(items);
+    setSync('Saved');
+  }catch(err){
+    setSync('Could not save — check connection');
+  }
+}
+
+async function saveTitle(title){
+  try{
+    await fetch('/api/plan/title', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ title })
+    });
+  }catch(err){}
+}
+
+function setSync(msg){
+  const el = document.getElementById('syncNote');
+  el.textContent = msg + ' · ' + new Date().toLocaleTimeString();
+}
+
+async function loadPlan(){
+  const res = await fetch('/api/plan');
+  return res.json();
+}
+
+async function init(){
+  const meta = document.getElementById('planMeta');
+  try{
+    const plan = await loadPlan();
+    items = plan.items || [];
+    lastSnapshot = JSON.stringify(items);
+    document.getElementById('planTitle').textContent = plan.title || 'Untitled plan';
+    meta.textContent = 'Shared with your team — live on this link';
+  }catch(err){
+    meta.textContent = 'Could not connect to the server';
+  }
+  render();
+  startPolling();
+}
+
+function startPolling(){
+  setInterval(async () => {
+    if(isTyping) return;
+    try{
+      const plan = await loadPlan();
+      const freshStr = JSON.stringify(plan.items || []);
+      if(freshStr !== lastSnapshot){
+        items = plan.items || [];
+        lastSnapshot = freshStr;
+        render();
+        setSync('Updated from teammate');
+      }
+    }catch(err){}
+  }, 6000);
+}
+
+document.getElementById('addBtn').addEventListener('click', addItem);
+document.getElementById('addBtnEmpty').addEventListener('click', addItem);
+document.getElementById('refreshBtn').addEventListener('click', async () => {
+  const plan = await loadPlan();
+  items = plan.items || [];
+  lastSnapshot = JSON.stringify(items);
+  render();
+  setSync('Refreshed');
+});
+document.getElementById('planTitle').addEventListener('blur', e => saveTitle(e.target.textContent.trim() || 'Untitled plan'));
+document.getElementById('planTitle').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ e.preventDefault(); e.target.blur(); }
+});
+
+init();
+</script>
+</body>
+</html>

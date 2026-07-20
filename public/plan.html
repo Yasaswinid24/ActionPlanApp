@@ -38,7 +38,7 @@
   .legend span{display:inline-flex; align-items:center; gap:6px;}
   .dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
   .rows{display:flex; flex-direction:column; gap:10px;}
-  .row{ display:grid; grid-template-columns: 4px 1.4fr 1fr 150px 1.3fr 34px; gap:0; background:var(--card); border:1px solid var(--hairline); border-radius:10px; overflow:hidden; align-items:stretch; }
+  .row{ display:grid; grid-template-columns: 4px 1.4fr 1fr 160px 1.3fr 34px; gap:0; background:var(--card); border:1px solid var(--hairline); border-radius:10px; overflow:hidden; align-items:stretch; }
   .row.done{opacity:0.6;}
   .rail{width:4px;}
   .cell{padding:12px 14px; border-left:1px solid var(--hairline); display:flex; flex-direction:column; justify-content:center; gap:4px;}
@@ -46,10 +46,11 @@
   .label{font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em; display:none;}
   input[type=text], input[type=date], textarea{ border:none; background:transparent; color:var(--ink); font-family:inherit; font-size:14px; width:100%; padding:2px 0; resize:none; }
   input[type=text]:focus, input[type=date]:focus, textarea:focus{outline:none;}
+  textarea{ overflow:hidden; line-height:1.4; }
   .activity-cell{display:flex; align-items:flex-start; gap:10px;}
-  .activity-cell input[type=text]{font-weight:500;}
+  .activity-cell textarea{font-weight:500;}
   input[type=checkbox]{ margin-top:3px; width:16px; height:16px; accent-color:var(--teal); flex-shrink:0; cursor:pointer; }
-  .done .activity-cell input[type=text]{text-decoration:line-through; color:var(--ink-soft);}
+  .done .activity-cell textarea{text-decoration:line-through; color:var(--ink-soft);}
   .status-chip{ display:inline-block; font-size:12px; font-weight:500; padding:2px 0; }
   .actions-cell{padding:0; align-items:center; justify-content:center; border-left:1px solid var(--hairline);}
   .del{ background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:18px; line-height:1; padding:8px; }
@@ -68,7 +69,7 @@
 </head>
 <body>
 <div class="wrap">
-  <p class="eyebrow"><a href="/" style="color:inherit; text-decoration:none;">← All customers</a></p>
+  <p class="eyebrow">Action plan</p>
   <h1 id="planTitle" contenteditable="true" spellcheck="false">Untitled plan</h1>
   <p class="plan-meta" id="planMeta">Loading…</p>
 
@@ -143,7 +144,7 @@ function render(){
         <input type="checkbox" data-id="${item.id}" data-field="done" ${item.done ? 'checked' : ''}>
         <div style="width:100%;">
           <span class="label">Activity</span>
-          <input type="text" data-id="${item.id}" data-field="activity" placeholder="What needs to happen" value="${escapeAttr(item.activity)}">
+          <textarea rows="1" data-id="${item.id}" data-field="activity" placeholder="What needs to happen">${escapeHtml(item.activity)}</textarea>
         </div>
       </div>
       <div class="cell">
@@ -171,12 +172,18 @@ function render(){
     el.addEventListener('focus', () => { isTyping = true; });
     el.addEventListener('blur', () => { isTyping = false; });
   });
+  rowsEl.querySelectorAll('textarea').forEach(autoGrow);
   rowsEl.querySelectorAll('input[type=checkbox]').forEach(el => {
     el.addEventListener('change', onFieldChange);
   });
   rowsEl.querySelectorAll('.del').forEach(el => {
     el.addEventListener('click', onDelete);
   });
+}
+
+function autoGrow(el){
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 
 function escapeHtml(str){ return (str || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -193,6 +200,7 @@ function onFieldChange(e){
   } else {
     item[field] = e.target.value;
     if(field === 'deadline') render();
+    if(e.target.tagName === 'TEXTAREA') autoGrow(e.target);
   }
   scheduleSave();
 }
@@ -208,7 +216,7 @@ function addItem(){
   items.push({ id: uid(), activity:'', responsible:'', deadline:'', notice:'', done:false });
   render();
   scheduleSave();
-  const inputs = document.querySelectorAll('.activity-cell input[type=text]');
+  const inputs = document.querySelectorAll('.activity-cell textarea');
   if(inputs.length) inputs[inputs.length - 1].focus();
 }
 

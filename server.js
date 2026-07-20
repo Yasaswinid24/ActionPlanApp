@@ -1,45 +1,52 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
-const { MongoClient } = require('mongodb');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Data now lives in MongoDB Atlas (free tier), NOT on Render's disk.
-// This means it survives restarts, redeploys, and sleep/wake cycles.
-// You must set the MONGODB_URI environment variable in Render's dashboard
-// (Settings -> Environment) with your Atlas connection string.
-const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = process.env.MONGODB_DB || 'action_plan';
+// Data lives on disk. On Render's FREE plan this folder is wiped on every
+// new deploy (and possibly on restarts) unless you attach a paid Persistent
+// Disk mounted at /data. See README.md for details.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'db.json');
 
-if (!MONGODB_URI) {
-  console.error('Missing MONGODB_URI environment variable. Set it in Render -> Environment.');
-  process.exit(1);
+function newId() {
+  return crypto.randomBytes(6).toString('hex');
 }
 
-const client = new MongoClient(MONGODB_URI);
-let plansCollection;
-
-const DEFAULT_DOC = { _id: 'plan', title: 'Untitled plan', items: [] };
-
-async function initDb() {
-  await client.connect();
-  const db = client.db(DB_NAME);
-  plansCollection = db.collection('plans');
-  const existing = await plansCollection.findOne({ _id: 'plan' });
-  if (!existing) {
-    await plansCollection.insertOne(DEFAULT_DOC);
+function ensureDb() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ plans: {} }, null, 2));
+    return;
   }
-  console.log('Connected to MongoDB Atlas.');
+  // Migrate old single-plan format ({ title, items }) into the new
+  // multi-plan format ({ plans: { id: { title, items } } }) automatically.
+  const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  if (!raw.plans) {
+    const migrated = { plans: {} };
+    if (raw.title || raw.items) {
+      const id = newId();
+      migrated.plans[id] = {
+        title: raw.title || 'Untitled plan',
+        items: raw.items || [],
+        createdAt: new Date().toISOString()
+      };
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(migrated, null, 2));
+  }
+}
+ensureDb();
+
+function readDb() {
+  ensureDb();
+  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
-async function readDb() {
-  const doc = await plansCollection.findOne({ _id: 'plan' });
-  return doc || DEFAULT_DOC;
-}
-
-async function writeDb(update) {
-  await plansCollection.updateOne({ _id: 'plan' }, { $set: update }, { upsert: true });
+function writeDb(db) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 }
 
 app.use(express.json());
@@ -47,33 +54,72 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- API ---
 
-app.get('/api/plan', async (req, res) => {
-  res.json(await readDb());
+// List all plans (summary only, for the customer/prospect list page)
+app.get('/api/plans', (req, res) => {
+  const db = readDb();
+  const list = Object.entries(db.plans).map(([id, plan]) => ({
+    id,
+    title: plan.title,
+    createdAt: plan.createdAt,
+    openCount: (plan.items || []).filter(i => !i.done).length,
+    totalCount: (plan.items || []).length
+  }));
+  list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  res.json(list);
 });
 
-app.put('/api/plan/title', async (req, res) => {
-  const title = (req.body.title || 'Untitled plan').toString().slice(0, 200);
-  await writeDb({ title });
-  res.json({ ok: true, title });
+// Create a new plan (e.g. for a new prospect/customer)
+app.post('/api/plans', (req, res) => {
+  const db = readDb();
+  const id = newId();
+  db.plans[id] = {
+    title: (req.body.title || 'Untitled plan').toString().slice(0, 200),
+    items: [],
+    createdAt: new Date().toISOString()
+  };
+  writeDb(db);
+  res.json({ ok: true, id });
 });
 
-app.put('/api/plan/items', async (req, res) => {
+// Get one plan
+app.get('/api/plans/:id', (req, res) => {
+  const db = readDb();
+  const plan = db.plans[req.params.id];
+  if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
+  res.json({ id: req.params.id, ...plan });
+});
+
+app.put('/api/plans/:id/title', (req, res) => {
+  const db = readDb();
+  const plan = db.plans[req.params.id];
+  if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
+  plan.title = (req.body.title || 'Untitled plan').toString().slice(0, 200);
+  writeDb(db);
+  res.json({ ok: true, title: plan.title });
+});
+
+app.put('/api/plans/:id/items', (req, res) => {
   if (!Array.isArray(req.body.items)) {
     return res.status(400).json({ ok: false, error: 'items must be an array' });
   }
-  await writeDb({ items: req.body.items });
+  const db = readDb();
+  const plan = db.plans[req.params.id];
+  if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
+  plan.items = req.body.items;
+  writeDb(db);
+  res.json({ ok: true });
+});
+
+app.delete('/api/plans/:id', (req, res) => {
+  const db = readDb();
+  if (!db.plans[req.params.id]) return res.status(404).json({ ok: false, error: 'Plan not found' });
+  delete db.plans[req.params.id];
+  writeDb(db);
   res.json({ ok: true });
 });
 
 app.get('/healthz', (req, res) => res.send('ok'));
 
-initDb()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Action plan server running on port ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error('Failed to connect to MongoDB Atlas:', err);
-    process.exit(1);
-  });
+app.listen(PORT, () => {
+  console.log(`Action plan server running on port ${PORT}`);
+});

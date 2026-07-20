@@ -1,52 +1,32 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Data lives on disk. On Render's FREE plan this folder is wiped on every
-// new deploy (and possibly on restarts) unless you attach a paid Persistent
-// Disk mounted at /data. See README.md for details.
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'db.json');
+// Connection string from MongoDB Atlas. Set this in Render's Environment
+// tab — see README.md. Because the data now lives in Atlas instead of on
+// Render's local disk, it survives every redeploy automatically.
+const MONGODB_URI = process.env.MONGODB_URI;
+const DB_NAME = process.env.MONGODB_DB || 'action_plans';
+
+if (!MONGODB_URI) {
+  console.error('MONGODB_URI is not set. Set it in your environment variables (see README.md).');
+}
 
 function newId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
-function ensureDb() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ plans: {} }, null, 2));
-    return;
-  }
-  // Migrate old single-plan format ({ title, items }) into the new
-  // multi-plan format ({ plans: { id: { title, items } } }) automatically.
-  const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  if (!raw.plans) {
-    const migrated = { plans: {} };
-    if (raw.title || raw.items) {
-      const id = newId();
-      migrated.plans[id] = {
-        title: raw.title || 'Untitled plan',
-        items: raw.items || [],
-        createdAt: new Date().toISOString()
-      };
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(migrated, null, 2));
-  }
-}
-ensureDb();
+let plansCollection;
 
-function readDb() {
-  ensureDb();
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-}
-
-function writeDb(db) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+async function connectDb() {
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  plansCollection = client.db(DB_NAME).collection('plans');
+  console.log('Connected to MongoDB');
 }
 
 // --- Admin protection (you + Panos only) ---
@@ -60,9 +40,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || null;
 
 function requireAdmin(req, res, next) {
   if (!ADMIN_PASSWORD) {
-    // No password configured yet — fail safe by blocking access rather than
-    // leaving the customer list open. Set ADMIN_PASSWORD in Render's
-    // environment variables to enable access. See README.md.
     return res.status(503).send('Admin access is not configured yet. Set ADMIN_PASSWORD in your environment variables.');
   }
   const header = req.headers.authorization || '';
@@ -97,10 +74,10 @@ app.get('/', requireAdmin, (req, res) => {
 // --- API ---
 
 // List all plans (summary only, for the customer/prospect list page)
-app.get('/api/plans', requireAdmin, (req, res) => {
-  const db = readDb();
-  const list = Object.entries(db.plans).map(([id, plan]) => ({
-    id,
+app.get('/api/plans', requireAdmin, async (req, res) => {
+  const docs = await plansCollection.find({}).toArray();
+  const list = docs.map(plan => ({
+    id: plan._id,
     title: plan.title,
     createdAt: plan.createdAt,
     openCount: (plan.items || []).filter(i => !i.done).length,
@@ -111,44 +88,46 @@ app.get('/api/plans', requireAdmin, (req, res) => {
 });
 
 // Create a new plan (e.g. for a new prospect/customer)
-app.post('/api/plans', requireAdmin, (req, res) => {
-  const db = readDb();
+app.post('/api/plans', requireAdmin, async (req, res) => {
   const id = newId();
-  db.plans[id] = {
+  const doc = {
+    _id: id,
     title: (req.body.title || 'Untitled plan').toString().slice(0, 200),
     items: [],
     createdAt: new Date().toISOString()
   };
-  writeDb(db);
+  await plansCollection.insertOne(doc);
   res.json({ ok: true, id });
 });
 
 // Get one plan — open access via its unguessable ID (this is the customer link)
-app.get('/api/plans/:id', (req, res) => {
-  const db = readDb();
-  const plan = db.plans[req.params.id];
+app.get('/api/plans/:id', async (req, res) => {
+  const plan = await plansCollection.findOne({ _id: req.params.id });
   if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
-  res.json({ id: req.params.id, ...plan });
+  res.json({ id: plan._id, title: plan.title, items: plan.items, createdAt: plan.createdAt });
 });
 
-app.put('/api/plans/:id/title', (req, res) => {
-  const db = readDb();
-  const plan = db.plans[req.params.id];
-  if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
-  plan.title = (req.body.title || 'Untitled plan').toString().slice(0, 200);
-  writeDb(db);
-  res.json({ ok: true, title: plan.title });
+app.put('/api/plans/:id/title', async (req, res) => {
+  const title = (req.body.title || 'Untitled plan').toString().slice(0, 200);
+  const result = await plansCollection.findOneAndUpdate(
+    { _id: req.params.id },
+    { $set: { title } },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Plan not found' });
+  res.json({ ok: true, title });
 });
 
-function saveItemsHandler(req, res) {
+async function saveItemsHandler(req, res) {
   if (!Array.isArray(req.body.items)) {
     return res.status(400).json({ ok: false, error: 'items must be an array' });
   }
-  const db = readDb();
-  const plan = db.plans[req.params.id];
-  if (!plan) return res.status(404).json({ ok: false, error: 'Plan not found' });
-  plan.items = req.body.items;
-  writeDb(db);
+  const result = await plansCollection.findOneAndUpdate(
+    { _id: req.params.id },
+    { $set: { items: req.body.items } },
+    { returnDocument: 'after' }
+  );
+  if (!result) return res.status(404).json({ ok: false, error: 'Plan not found' });
   res.json({ ok: true });
 }
 
@@ -158,16 +137,21 @@ app.put('/api/plans/:id/items', saveItemsHandler);
 // lets that reliable "save on the way out" mechanism work.
 app.post('/api/plans/:id/items', saveItemsHandler);
 
-app.delete('/api/plans/:id', requireAdmin, (req, res) => {
-  const db = readDb();
-  if (!db.plans[req.params.id]) return res.status(404).json({ ok: false, error: 'Plan not found' });
-  delete db.plans[req.params.id];
-  writeDb(db);
+app.delete('/api/plans/:id', requireAdmin, async (req, res) => {
+  const result = await plansCollection.deleteOne({ _id: req.params.id });
+  if (result.deletedCount === 0) return res.status(404).json({ ok: false, error: 'Plan not found' });
   res.json({ ok: true });
 });
 
 app.get('/healthz', (req, res) => res.send('ok'));
 
-app.listen(PORT, () => {
-  console.log(`Action plan server running on port ${PORT}`);
-});
+connectDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Action plan server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  });

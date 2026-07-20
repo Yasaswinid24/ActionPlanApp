@@ -233,11 +233,15 @@ const PLAN_ID = new URLSearchParams(window.location.search).get('id');
 async function saveItems(){
   if(!PLAN_ID) return;
   try{
-    await fetch(`/api/plans/${PLAN_ID}/items`, {
+    const res = await fetch(`/api/plans/${PLAN_ID}/items`, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ items })
     });
+    if(!res.ok){
+      setSync(res.status === 404 ? 'Could not save — plan not found' : 'Could not save — server error');
+      return;
+    }
     lastSnapshot = JSON.stringify(items);
     hasPendingSave = false;
     setSync('Saved');
@@ -347,6 +351,15 @@ document.getElementById('planTitle').addEventListener('keydown', e => {
 });
 
 init();
+
+// See index.html for why: force a real reload if the browser restores this
+// page from cache (e.g. back button) instead of showing stale data.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
+
 </script>
 </body>
 </html>

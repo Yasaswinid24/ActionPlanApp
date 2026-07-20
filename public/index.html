@@ -128,12 +128,18 @@ async function createPlan(){
   window.location.href = `/plan.html?id=${data.id}`;
 }
 
-document.getElementById('createBtn').addEventListener('click', createPlan);
-document.getElementById('newName').addEventListener('keydown', e => {
-  if(e.key === 'Enter') createPlan();
+render();
+
+// If this page is restored from the browser's back/forward cache (e.g. the
+// user hits the back button), the browser can show a frozen snapshot from
+// before a plan was created instead of current data. Force a real reload
+// in that case so the list is always accurate.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
 });
 
-render();
 </script>
 </body>
 </html>

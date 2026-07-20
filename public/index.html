@@ -117,15 +117,32 @@ async function onDelete(e){
 
 async function createPlan(){
   const input = document.getElementById('newName');
+  const btn = document.getElementById('createBtn');
   const title = input.value.trim();
   if(!title) { input.focus(); return; }
-  const res = await fetch('/api/plans', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ title })
-  });
-  const data = await res.json();
-  window.location.href = `/plan.html?id=${data.id}`;
+
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+  try{
+    const res = await fetch('/api/plans', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ title })
+    });
+    if(!res.ok){
+      const text = await res.text().catch(() => '');
+      alert(`Could not create the plan (server said: ${res.status}). ${text || 'Try refreshing the page and logging in again.'}`);
+      btn.disabled = false;
+      btn.textContent = '+ New plan';
+      return;
+    }
+    const data = await res.json();
+    window.location.href = `/plan.html?id=${data.id}`;
+  }catch(err){
+    alert('Could not reach the server. Check your connection and try again.');
+    btn.disabled = false;
+    btn.textContent = '+ New plan';
+  }
 }
 
 render();

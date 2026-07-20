@@ -220,9 +220,12 @@ function addItem(){
   if(inputs.length) inputs[inputs.length - 1].focus();
 }
 
+let hasPendingSave = false;
+
 function scheduleSave(){
+  hasPendingSave = true;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveItems, 400);
+  saveTimer = setTimeout(saveItems, 150);
 }
 
 const PLAN_ID = new URLSearchParams(window.location.search).get('id');
@@ -236,11 +239,33 @@ async function saveItems(){
       body: JSON.stringify({ items })
     });
     lastSnapshot = JSON.stringify(items);
+    hasPendingSave = false;
     setSync('Saved');
   }catch(err){
     setSync('Could not save — check connection');
   }
 }
+
+// Reliable fallback: if a save is still pending when the tab is hidden,
+// closed, or navigated away from (e.g. the back button), flush it with
+// sendBeacon — this fires even if the page is being torn down and a normal
+// fetch() would get cancelled mid-flight.
+function flushSaveBeacon(){
+  if(!hasPendingSave || !PLAN_ID) return;
+  const blob = new Blob([JSON.stringify({ items })], { type: 'application/json' });
+  navigator.sendBeacon(`/api/plans/${PLAN_ID}/items?beacon=1`, blob);
+  hasPendingSave = false;
+}
+
+window.addEventListener('pagehide', flushSaveBeacon);
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden') flushSaveBeacon();
+});
+window.addEventListener('beforeunload', (e) => {
+  if(hasPendingSave){
+    flushSaveBeacon();
+  }
+});
 
 async function saveTitle(title){
   if(!PLAN_ID) return;

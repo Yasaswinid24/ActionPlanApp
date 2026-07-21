@@ -145,6 +145,11 @@ async function createPlan(){
   }
 }
 
+document.getElementById('createBtn').addEventListener('click', createPlan);
+document.getElementById('newName').addEventListener('keydown', e => {
+  if(e.key === 'Enter') createPlan();
+});
+
 render();
 
 // If this page is restored from the browser's back/forward cache (e.g. the
